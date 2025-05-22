@@ -27,7 +27,14 @@ import {
 } from "@/components/ui/drawer";
 import { motion, useAnimation, Variants } from "framer-motion";
 import { useEffect, useState, useCallback } from "react";
-import { RotateCcw, PlusCircle, Eye, EyeOff } from "lucide-react";
+import { RotateCcw, PlusCircle, Eye, EyeOff, Info } from "lucide-react";
+import {
+  Dialog as InfoDialog,
+  DialogContent as InfoDialogContent,
+  DialogHeader as InfoDialogHeader,
+  DialogTitle as InfoDialogTitle,
+  DialogTrigger as InfoDialogTrigger,
+} from "@/components/ui/dialog";
 
 // Custom hook for media query
 function useMediaQuery(query: string) {
@@ -473,6 +480,8 @@ const QwixxScorecard = () => {
       const isTicked = stateArray.includes(num);
       const canCurrentlySelect = canSelectNumber(color, num);
       const isDisabledForNewTick = !canCurrentlySelect && !isTicked;
+      const isLastCell =
+        (isAscending && num === 12) || (!isAscending && num === 2);
 
       let latestTickCondition;
       if (isAscending) {
@@ -526,37 +535,103 @@ const QwixxScorecard = () => {
       if (index === arr.length - 1)
         cellClasses += isAscending ? " rounded-r-md" : " rounded-r-md"; // All rows end right
 
+      // Tooltip/Info logic for last cell if disabled
+      const tooltipMessage = "You need min 5 fields checked";
+
       return (
         <td
           key={`${color}-${num}`}
-          className={cellClasses}
+          className={cellClasses.replace(/opacity-\d{2,3}/g, "")}
           onClick={(e) => {
             if (canCurrentlySelect || isTicked) {
               handleToggle(num, isTicked, e);
             }
           }}
         >
-          <div
-            className={textContainerClasses}
-            style={{ position: "relative", width: "100%", height: "100%" }}
-          >
-            {num}
-            {/* Star for locked row on last cell */}
-            {(color === "red" || color === "yellow") &&
-              num === 12 &&
-              isRowLocked(color) && (
-                <span className="absolute -right-1 -bottom-1 text-yellow-400 z-10 text-2xl drop-shadow">
-                  ★
-                </span>
-              )}
-            {(color === "green" || color === "blue") &&
-              num === 2 &&
-              isRowLocked(color) && (
-                <span className="absolute -right-1 -bottom-1 text-yellow-400 z-10 text-2xl drop-shadow">
-                  ★
-                </span>
-              )}
-          </div>
+          {isLastCell && isDisabledForNewTick ? (
+            isDesktop ? (
+              <div className="w-full h-full flex items-center justify-center">
+                <div className="group relative w-full h-full flex items-center justify-center">
+                  <span className="absolute z-20 left-1/2 top-0 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded bg-muted px-2 py-1 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg border border-border">
+                    {tooltipMessage}
+                  </span>
+                  <span
+                    className={
+                      textContainerClasses +
+                      (cellClasses.includes("opacity-")
+                        ? " " +
+                          (cellClasses.match(/opacity-\d{2,3}/)?.[0] ?? "")
+                        : "")
+                    }
+                  >
+                    {num}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <InfoDialog>
+                  <InfoDialogTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex items-center gap-1 text-inherit focus:outline-none"
+                    >
+                      <span
+                        className={
+                          textContainerClasses +
+                          (cellClasses.includes("opacity-")
+                            ? " " +
+                              (cellClasses.match(/opacity-\d{2,3}/)?.[0] ?? "")
+                            : "")
+                        }
+                      >
+                        {num}
+                      </span>
+                      <Info className="ml-1 w-4 h-4 text-muted-foreground" />
+                    </button>
+                  </InfoDialogTrigger>
+                  <InfoDialogContent className="max-w-xs">
+                    <InfoDialogHeader>
+                      <InfoDialogTitle>Why is this disabled?</InfoDialogTitle>
+                    </InfoDialogHeader>
+                    <div className="text-sm text-muted-foreground">
+                      {tooltipMessage}
+                    </div>
+                  </InfoDialogContent>
+                </InfoDialog>
+              </div>
+            )
+          ) : (
+            <div
+              className={textContainerClasses}
+              style={{ position: "relative", width: "100%", height: "100%" }}
+            >
+              <span
+                className={
+                  cellClasses.includes("opacity-")
+                    ? cellClasses.match(/opacity-\d{2,3}/)?.[0] ?? ""
+                    : ""
+                }
+              >
+                {num}
+              </span>
+              {/* Star for locked row on last cell */}
+              {(color === "red" || color === "yellow") &&
+                num === 12 &&
+                isRowLocked(color) && (
+                  <span className="absolute -right-1 -bottom-1 text-yellow-400 z-10 text-2xl drop-shadow">
+                    ★
+                  </span>
+                )}
+              {(color === "green" || color === "blue") &&
+                num === 2 &&
+                isRowLocked(color) && (
+                  <span className="absolute -right-1 -bottom-1 text-yellow-400 z-10 text-2xl drop-shadow">
+                    ★
+                  </span>
+                )}
+            </div>
+          )}
         </td>
       );
     });
@@ -569,7 +644,7 @@ const QwixxScorecard = () => {
 
   return (
     <motion.div
-      className="w-full max-w-[600px] mx-auto text-[22px]"
+      className="w-full mx-auto text-[22px] px-0"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
