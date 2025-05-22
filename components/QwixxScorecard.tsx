@@ -507,7 +507,7 @@ const QwixxScorecard = () => {
         if (latestTickCondition) {
           cellClasses += " opacity-100";
         } else {
-          cellClasses += " opacity-80";
+          cellClasses += " opacity-60";
         }
       } else {
         cellClasses += ` ${palette.untickedBg} ${palette.untickedText}`;
