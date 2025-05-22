@@ -3,10 +3,52 @@
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
+  DrawerOverlay,
+  DrawerPortal,
+} from "@/components/ui/drawer";
 import { motion, useAnimation, Variants } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { RotateCcw, PlusCircle, Eye, EyeOff } from "lucide-react";
+
+// Custom hook for media query
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    if (media.matches !== matches) {
+      setMatches(media.matches);
+    }
+    const listener = () => setMatches(media.matches);
+    window.addEventListener("resize", listener);
+    return () => window.removeEventListener("resize", listener);
+  }, [matches, query]);
+
+  return matches;
+}
 
 const QwixxScorecard = () => {
+  const isDesktop = useMediaQuery("(min-width: 768px)");
+
   // State for each color row
   const [red, setRed] = useState<number[]>([]);
   const [yellow, setYellow] = useState<number[]>([]);
@@ -18,6 +60,7 @@ const QwixxScorecard = () => {
 
   // Animation states
   const [isScoreVisible, setIsScoreVisible] = useState<boolean>(false);
+  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
 
   // State for animation when row is locked
   const [showBonusAnimation, setShowBonusAnimation] = useState<{
@@ -96,29 +139,17 @@ const QwixxScorecard = () => {
   // Variants for bonus animation
   const bonusAnimationVariants: Variants = {
     hidden: { opacity: 0, scale: 0, y: 0 },
-    visible: { 
-      opacity: [0, 1, 1, 0], 
+    visible: {
+      opacity: [0, 1, 1, 0],
       scale: [0.5, 1.2, 1.5, 1.8],
       y: -60,
-      transition: { 
+      transition: {
         duration: 1.5,
         times: [0, 0.2, 0.8, 1],
-        ease: "easeOut"
-      }
+        ease: "easeOut",
+      },
     },
   };
-
-  // Show score animation when rows are updated
-  useEffect(() => {
-    if (
-      red.length > 0 ||
-      yellow.length > 0 ||
-      green.length > 0 ||
-      blue.length > 0
-    ) {
-      setIsScoreVisible(true);
-    }
-  }, [red, yellow, green, blue]);
 
   // Calculate points based on the number of crosses
   const calculatePoints = (count: number): number => {
@@ -135,17 +166,10 @@ const QwixxScorecard = () => {
       calculatePoints(green.length) +
       calculatePoints(blue.length);
 
-    // Bonus points for locked rows (1 point per locked row)
-    const bonusPoints =
-      (isRowLocked("red") ? 1 : 0) +
-      (isRowLocked("yellow") ? 1 : 0) +
-      (isRowLocked("green") ? 1 : 0) +
-      (isRowLocked("blue") ? 1 : 0);
-
     // Penalty points
     const penaltyPoints = penalties * 5;
 
-    return baseScore + bonusPoints - penaltyPoints;
+    return baseScore - penaltyPoints;
   };
 
   // Check if a row is locked
@@ -187,12 +211,17 @@ const QwixxScorecard = () => {
           // Can't select 12 without having 5 numbers already
           return;
         }
-        
+
         // Check if this action will lock the row (selecting the 12)
         const willLock = num === 12 && currentNumbers.length >= 5;
-        
-        setter([...currentNumbers, num].sort((a, b) => a - b));
-        
+
+        // If ticking the last number, add it twice (counts as two marks)
+        if (num === 12) {
+          setter([...currentNumbers, num, num].sort((a, b) => a - b));
+        } else {
+          setter([...currentNumbers, num].sort((a, b) => a - b));
+        }
+
         // If locking the row, show bonus animation
         if (willLock && event) {
           const rect = (event.target as HTMLElement).getBoundingClientRect();
@@ -200,19 +229,29 @@ const QwixxScorecard = () => {
             active: true,
             color: color === "red" ? "#ff3b30" : "#ffcc00",
             x: rect.left + rect.width / 2,
-            y: rect.top
+            y: rect.top,
           });
-          
+
           // Reset animation after it completes
           setTimeout(() => {
-            setShowBonusAnimation(prev => ({...prev, active: false}));
+            setShowBonusAnimation((prev) => ({ ...prev, active: false }));
           }, 1500);
         }
       }
     } else {
       // Can only uncheck if it's the highest number
       if (Math.max(...currentNumbers) === num) {
-        setter(currentNumbers.filter((n) => n !== num));
+        // If unticking the last number (12), remove all instances of it (to remove both marks if it was a double-tick)
+        if (num === 12) {
+          setter(currentNumbers.filter((n) => n !== num));
+        } else {
+          // For other numbers, remove only the specific instance
+          const index = currentNumbers.lastIndexOf(num);
+          if (index !== -1) {
+            currentNumbers.splice(index, 1);
+            setter(currentNumbers);
+          }
+        }
       }
     }
   };
@@ -235,12 +274,17 @@ const QwixxScorecard = () => {
           // Can't select 2 without having 5 numbers already
           return;
         }
-        
+
         // Check if this action will lock the row (selecting the 2)
         const willLock = num === 2 && currentNumbers.length >= 5;
-        
-        setter([...currentNumbers, num].sort((a, b) => b - a));
-        
+
+        // If ticking the last number, add it twice (counts as two marks)
+        if (num === 2) {
+          setter([...currentNumbers, num, num].sort((a, b) => b - a));
+        } else {
+          setter([...currentNumbers, num].sort((a, b) => b - a));
+        }
+
         // If locking the row, show bonus animation
         if (willLock && event) {
           const rect = (event.target as HTMLElement).getBoundingClientRect();
@@ -248,19 +292,29 @@ const QwixxScorecard = () => {
             active: true,
             color: color === "green" ? "#34c759" : "#007aff",
             x: rect.left + rect.width / 2,
-            y: rect.top
+            y: rect.top,
           });
-          
+
           // Reset animation after it completes
           setTimeout(() => {
-            setShowBonusAnimation(prev => ({...prev, active: false}));
+            setShowBonusAnimation((prev) => ({ ...prev, active: false }));
           }, 1500);
         }
       }
     } else {
       // Can only uncheck if it's the lowest number
       if (Math.min(...currentNumbers) === num) {
-        setter(currentNumbers.filter((n) => n !== num));
+        // If unticking the last number (2), remove all instances of it (to remove both marks if it was a double-tick)
+        if (num === 2) {
+          setter(currentNumbers.filter((n) => n !== num));
+        } else {
+          // For other numbers, remove only the specific instance
+          const index = currentNumbers.lastIndexOf(num);
+          if (index !== -1) {
+            currentNumbers.splice(index, 1);
+            setter(currentNumbers);
+          }
+        }
       }
     }
   };
@@ -286,298 +340,412 @@ const QwixxScorecard = () => {
     setPenalties(0);
   };
 
-  // Check if number can be selected
+  // Check if number can be selected or unticked (for unticking, allow the last ticked number to be enabled)
   const canSelectNumber = (
     color: "red" | "yellow" | "green" | "blue",
     num: number
   ): boolean => {
-    // If row is locked, no more selections allowed
-    if (isRowLocked(color)) return false;
+    const currentNumbers = {
+      red: red,
+      yellow: yellow,
+      green: green,
+      blue: blue,
+    }[color];
 
-    if (color === "red" || color === "yellow") {
-      const currentNumbers = color === "red" ? red : yellow;
-      // For last number (12), also check that we have at least 5 numbers already
-      if (num === 12) {
-        return (
-          currentNumbers.every((n) => n < num) && currentNumbers.length >= 5
-        );
+    const isLastNumber =
+      color === "red" || color === "yellow" ? num === 12 : num === 2;
+
+    // If the number is already ticked
+    if (currentNumbers.includes(num)) {
+      if (isLastNumber) {
+        // The special last number (12 or 2) can always be unticked if it's present.
+        // This handles cases where it's ticked once or twice (for the double mark).
+        return true;
+      } else {
+        // For other ticked numbers, it must be the highest/lowest in the sequence to be unticked.
+        if (color === "red" || color === "yellow") {
+          return Math.max(...currentNumbers) === num;
+        } else {
+          // green or blue
+          return Math.min(...currentNumbers) === num;
+        }
       }
-      return currentNumbers.every((n) => n < num);
     } else {
-      const currentNumbers = color === "green" ? green : blue;
-      // For last number (2), also check that we have at least 5 numbers already
-      if (num === 2) {
-        return (
-          currentNumbers.every((n) => n > num) && currentNumbers.length >= 5
+      // If the number is NOT ticked yet (i.e., we're considering ticking it):
+      // 1. Row must not be locked to tick a new number.
+      if (isRowLocked(color)) return false;
+
+      // 2. Standard progression rules apply.
+      if (color === "red" || color === "yellow") {
+        if (num === 12) {
+          // Ticking 12 (last number for ascending)
+          return (
+            currentNumbers.every((n) => n < num) && currentNumbers.length >= 5
+          );
+        }
+        // Ticking other numbers for ascending rows
+        return currentNumbers.every((n) => n < num);
+      } else {
+        // green or blue
+        if (num === 2) {
+          // Ticking 2 (last number for descending)
+          return (
+            currentNumbers.every((n) => n > num) && currentNumbers.length >= 5
+          );
+        }
+        // Ticking other numbers for descending rows
+        return currentNumbers.every((n) => n > num);
+      }
+    }
+  };
+
+  const handleToggleFactory = (color: "red" | "yellow" | "green" | "blue") => {
+    return (
+      num: number,
+      currentIsTicked: boolean,
+      event?: React.MouseEvent
+    ) => {
+      if (color === "red" || color === "yellow") {
+        handleAscendingNumberToggle(color, num, !currentIsTicked, event);
+      } else {
+        handleDescendingNumberToggle(
+          color as "green" | "blue",
+          num,
+          !currentIsTicked,
+          event
         );
       }
-      return currentNumbers.every((n) => n > num);
-    }
+    };
   };
 
-  // Generate red row numbers (2-12)
-  const renderRedRow = () => {
-    const numbers = [];
-    for (let i = 2; i <= 12; i++) {
-      numbers.push(
+  const renderRowCells = (
+    color: "red" | "yellow" | "green" | "blue",
+    numbersArray: number[],
+    isAscending: boolean
+  ) => {
+    const stateArray = {
+      red: red,
+      yellow: yellow,
+      green: green,
+      blue: blue,
+    }[color];
+
+    const handleToggle = handleToggleFactory(color);
+
+    const colorPalettes = {
+      red: {
+        untickedBg: "bg-red-200",
+        untickedText: "text-red-900",
+        untickedHover: "hover:bg-red-300",
+        tickedBg: "bg-red-400",
+        tickedText: "text-white",
+        tickedHover: "hover:bg-red-500",
+      },
+      yellow: {
+        untickedBg: "bg-yellow-200",
+        untickedText: "text-yellow-900",
+        untickedHover: "hover:bg-yellow-300",
+        tickedBg: "bg-yellow-300",
+        tickedText: "text-black",
+        tickedHover: "hover:bg-yellow-400",
+      },
+      green: {
+        untickedBg: "bg-green-200",
+        untickedText: "text-green-900",
+        untickedHover: "hover:bg-green-300",
+        tickedBg: "bg-green-400",
+        tickedText: "text-white",
+        tickedHover: "hover:bg-green-500",
+      },
+      blue: {
+        untickedBg: "bg-blue-200",
+        untickedText: "text-blue-900",
+        untickedHover: "hover:bg-blue-300",
+        tickedBg: "bg-blue-400",
+        tickedText: "text-white",
+        tickedHover: "hover:bg-blue-500",
+      },
+    };
+
+    const palette = colorPalettes[color];
+
+    return numbersArray.map((num, index, arr) => {
+      const isTicked = stateArray.includes(num);
+      const canCurrentlySelect = canSelectNumber(color, num);
+      const isDisabledForNewTick = !canCurrentlySelect && !isTicked;
+
+      let latestTickCondition;
+      if (isAscending) {
+        latestTickCondition =
+          isTicked &&
+          Math.max(...stateArray.filter((n) => typeof n === "number")) ===
+            num &&
+          stateArray.filter((n) => n === num).length > 0;
+        if (num === 12 && stateArray.filter((n) => n === 12).length > 1)
+          latestTickCondition = true; // Ensure double marked 12 shows ring
+      } else {
+        latestTickCondition =
+          isTicked &&
+          Math.min(...stateArray.filter((n) => typeof n === "number")) ===
+            num &&
+          stateArray.filter((n) => n === num).length > 0;
+        if (num === 2 && stateArray.filter((n) => n === 2).length > 1)
+          latestTickCondition = true; // Ensure double marked 2 shows ring
+      }
+
+      let cellClasses =
+        "w-12 h-12 rounded-md font-bold text-xl transition-all duration-150 cursor-pointer px-2";
+      const textContainerClasses =
+        "w-full h-full flex items-center justify-center";
+
+      if (isTicked) {
+        cellClasses += ` ${palette.tickedBg} ${palette.tickedText}`;
+        if (canCurrentlySelect) {
+          // Only allow hover if it's the one that can be unticked
+          cellClasses += ` ${palette.tickedHover}`;
+        }
+        if (latestTickCondition) {
+          cellClasses += " opacity-100";
+        } else {
+          cellClasses += " opacity-80";
+        }
+      } else {
+        cellClasses += ` ${palette.untickedBg} ${palette.untickedText}`;
+        if (canCurrentlySelect) {
+          cellClasses += ` ${palette.untickedHover}`;
+        }
+      }
+
+      if (isDisabledForNewTick) {
+        cellClasses += " opacity-20 cursor-not-allowed";
+      }
+
+      // Add specific rounding for first/last cells in the visual row
+      if (index === 0)
+        cellClasses += isAscending ? " rounded-l-md" : " rounded-l-md"; // All rows start left
+      if (index === arr.length - 1)
+        cellClasses += isAscending ? " rounded-r-md" : " rounded-r-md"; // All rows end right
+
+      return (
         <td
-          key={`red-${i}`}
-          className={`${i === 2 ? "first" : i === 12 ? "last" : ""} ${
-            i === 12 && isRowLocked("red") ? "locked-cell" : ""
-          }`}
+          key={`${color}-${num}`}
+          className={cellClasses}
+          onClick={(e) => {
+            if (canCurrentlySelect || isTicked) {
+              handleToggle(num, isTicked, e);
+            }
+          }}
         >
-          <motion.div
-            variants={checkboxVariants}
-            animate={red.includes(i) ? "checked" : "unchecked"}
+          <div
+            className={textContainerClasses}
+            style={{ position: "relative", width: "100%", height: "100%" }}
           >
-            <Checkbox
-              id={`red-${i}`}
-              className={`red-checkbox bg-white/20 ${
-                i === 12 && isRowLocked("red") ? "locked-checkbox" : ""
-              }`}
-              checked={red.includes(i)}
-              disabled={!canSelectNumber("red", i)}
-              onCheckedChange={(checked) =>
-                handleAscendingNumberToggle("red", i, !!checked)
-              }
-              onClick={(event) => {
-                if (!red.includes(i) && i === 12 && red.length >= 5 && canSelectNumber("red", i)) {
-                  handleAscendingNumberToggle("red", i, true, event);
-                }
-              }}
-            />
-          </motion.div>
-          {i === 12 && isRowLocked("red") && (
-            <motion.span
-              className="lock-indicator"
-              variants={starVariants}
-              initial="initial"
-              animate="animate"
-            >
-              ★
-            </motion.span>
-          )}
+            {num}
+            {/* Star for locked row on last cell */}
+            {(color === "red" || color === "yellow") &&
+              num === 12 &&
+              isRowLocked(color) && (
+                <span className="absolute -right-1 -bottom-1 text-yellow-400 z-10 text-2xl drop-shadow">
+                  ★
+                </span>
+              )}
+            {(color === "green" || color === "blue") &&
+              num === 2 &&
+              isRowLocked(color) && (
+                <span className="absolute -right-1 -bottom-1 text-yellow-400 z-10 text-2xl drop-shadow">
+                  ★
+                </span>
+              )}
+          </div>
         </td>
       );
-    }
-    return numbers;
+    });
   };
 
-  // Generate yellow row numbers (2-12)
-  const renderYellowRow = () => {
-    const numbers = [];
-    for (let i = 2; i <= 12; i++) {
-      numbers.push(
-        <td
-          key={`yellow-${i}`}
-          className={`${i === 2 ? "first" : i === 12 ? "last" : ""} ${
-            i === 12 && isRowLocked("yellow") ? "locked-cell" : ""
-          }`}
-        >
-          <motion.div
-            variants={checkboxVariants}
-            animate={yellow.includes(i) ? "checked" : "unchecked"}
-          >
-            <Checkbox
-              id={`yellow-${i}`}
-              className={`yellow-checkbox bg-white/20 ${
-                i === 12 && isRowLocked("yellow") ? "locked-checkbox" : ""
-              }`}
-              checked={yellow.includes(i)}
-              disabled={!canSelectNumber("yellow", i)}
-              onCheckedChange={(checked) =>
-                handleAscendingNumberToggle("yellow", i, !!checked)
-              }
-              onClick={(event) => {
-                if (!yellow.includes(i) && i === 12 && yellow.length >= 5 && canSelectNumber("yellow", i)) {
-                  handleAscendingNumberToggle("yellow", i, true, event);
-                }
-              }}
-            />
-          </motion.div>
-          {i === 12 && isRowLocked("yellow") && (
-            <motion.span
-              className="lock-indicator"
-              variants={starVariants}
-              initial="initial"
-              animate="animate"
-            >
-              ★
-            </motion.span>
-          )}
-        </td>
-      );
-    }
-    return numbers;
-  };
-
-  // Generate green row numbers (12-2)
-  const renderGreenRow = () => {
-    const numbers = [];
-    for (let i = 12; i >= 2; i--) {
-      numbers.push(
-        <td
-          key={`green-${i}`}
-          className={`${i === 12 ? "first" : i === 2 ? "last" : ""} ${
-            i === 2 && isRowLocked("green") ? "locked-cell" : ""
-          }`}
-        >
-          <motion.div
-            variants={checkboxVariants}
-            animate={green.includes(i) ? "checked" : "unchecked"}
-          >
-            <Checkbox
-              id={`green-${i}`}
-              className={`green-checkbox bg-white/20 ${
-                i === 2 && isRowLocked("green") ? "locked-checkbox" : ""
-              }`}
-              checked={green.includes(i)}
-              disabled={!canSelectNumber("green", i)}
-              onCheckedChange={(checked) =>
-                handleDescendingNumberToggle("green", i, !!checked)
-              }
-              onClick={(event) => {
-                if (!green.includes(i) && i === 2 && green.length >= 5 && canSelectNumber("green", i)) {
-                  handleDescendingNumberToggle("green", i, true, event);
-                }
-              }}
-            />
-          </motion.div>
-          {i === 2 && isRowLocked("green") && (
-            <motion.span
-              className="lock-indicator"
-              variants={starVariants}
-              initial="initial"
-              animate="animate"
-            >
-              ★
-            </motion.span>
-          )}
-        </td>
-      );
-    }
-    return numbers;
-  };
-
-  // Generate blue row numbers (12-2)
-  const renderBlueRow = () => {
-    const numbers = [];
-    for (let i = 12; i >= 2; i--) {
-      numbers.push(
-        <td
-          key={`blue-${i}`}
-          className={`${i === 12 ? "first" : i === 2 ? "last" : ""} ${
-            i === 2 && isRowLocked("blue") ? "locked-cell" : ""
-          }`}
-        >
-          <motion.div
-            variants={checkboxVariants}
-            animate={blue.includes(i) ? "checked" : "unchecked"}
-          >
-            <Checkbox
-              id={`blue-${i}`}
-              className={`blue-checkbox bg-white/20 ${
-                i === 2 && isRowLocked("blue") ? "locked-checkbox" : ""
-              }`}
-              checked={blue.includes(i)}
-              disabled={!canSelectNumber("blue", i)}
-              onCheckedChange={(checked) =>
-                handleDescendingNumberToggle("blue", i, !!checked)
-              }
-              onClick={(event) => {
-                if (!blue.includes(i) && i === 2 && blue.length >= 5 && canSelectNumber("blue", i)) {
-                  handleDescendingNumberToggle("blue", i, true, event);
-                }
-              }}
-            />
-          </motion.div>
-          {i === 2 && isRowLocked("blue") && (
-            <motion.span
-              className="lock-indicator"
-              variants={starVariants}
-              initial="initial"
-              animate="animate"
-            >
-              ★
-            </motion.span>
-          )}
-        </td>
-      );
-    }
-    return numbers;
-  };
+  const redNumbers = Array.from({ length: 11 }, (_, i) => i + 2); // 2 to 12
+  const yellowNumbers = Array.from({ length: 11 }, (_, i) => i + 2); // 2 to 12
+  const greenNumbers = Array.from({ length: 11 }, (_, i) => 12 - i); // 12 to 2
+  const blueNumbers = Array.from({ length: 11 }, (_, i) => 12 - i); // 12 to 2
 
   return (
     <motion.div
-      className="qwixx-container"
+      className="w-full max-w-[600px] mx-auto text-[22px]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
     >
-      <table className="qwixx-table">
-        <tbody>
+      <table className="w-full border-separate border-spacing-y-3 border-spacing-x-2 mb-2">
+        <tbody className="space-y-2">
           <motion.tr
-            className="red-row"
             variants={tableRowVariants}
             initial="hidden"
             animate="visible"
             custom={0}
           >
-            {renderRedRow()}
+            {renderRowCells("red", redNumbers, true)}
           </motion.tr>
           <motion.tr
-            className="numbers-row"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.2, duration: 0.5 }}
-          >
-            {[...Array(11)].map((_, i) => (
-              <th key={`header-ascending-${i + 2}`}>{i + 2}</th>
-            ))}
-          </motion.tr>
-          <motion.tr
-            className="yellow-row"
             variants={tableRowVariants}
             initial="hidden"
             animate="visible"
             custom={1}
           >
-            {renderYellowRow()}
+            {renderRowCells("yellow", yellowNumbers, true)}
           </motion.tr>
           <motion.tr
-            className="green-row"
             variants={tableRowVariants}
             initial="hidden"
             animate="visible"
             custom={2}
           >
-            {renderGreenRow()}
+            {renderRowCells("green", greenNumbers, false)}
           </motion.tr>
           <motion.tr
-            className="numbers-row"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3, duration: 0.5 }}
-          >
-            {[...Array(11)].map((_, i) => (
-              <th key={`header-descending-${12 - i}`}>{12 - i}</th>
-            ))}
-          </motion.tr>
-          <motion.tr
-            className="blue-row"
             variants={tableRowVariants}
             initial="hidden"
             animate="visible"
             custom={3}
           >
-            {renderBlueRow()}
+            {renderRowCells("blue", blueNumbers, false)}
           </motion.tr>
         </tbody>
       </table>
 
+      {/* Main Action Buttons Row */}
+      <motion.div
+        className="mt-6 flex flex-row justify-center items-center space-x-2"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4, duration: 0.5 }}
+      >
+        {/* Reset Game Button (Left) with Confirmation */}
+        {isDesktop ? (
+          <Dialog
+            open={isResetConfirmOpen}
+            onOpenChange={setIsResetConfirmOpen}
+          >
+            <DialogTrigger asChild>
+              <Button
+                id="reset-game-button"
+                variant="destructive"
+                className="transition duration-150 ease-in-out hover:scale-105 active:scale-95"
+              >
+                <RotateCcw className="mr-2" />
+                Reset Game
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Confirm Reset</DialogTitle>
+                <DialogDescription>
+                  Are you sure you want to reset the game? All current scores
+                  and marks will be lost.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button
+                    variant="outline"
+                    className="transition duration-150 ease-in-out hover:scale-105 active:scale-95"
+                  >
+                    Cancel
+                  </Button>
+                </DialogClose>
+                <Button
+                  variant="destructive"
+                  className="transition duration-150 ease-in-out hover:scale-105 active:scale-95"
+                  onClick={() => {
+                    handleReset();
+                    setIsResetConfirmOpen(false);
+                  }}
+                >
+                  <RotateCcw className="mr-2" />
+                  Confirm Reset
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        ) : (
+          <Drawer
+            open={isResetConfirmOpen}
+            onOpenChange={setIsResetConfirmOpen}
+          >
+            <DrawerTrigger asChild>
+              <Button
+                id="reset-game-button-mobile"
+                variant="destructive"
+                className="transition duration-150 ease-in-out hover:scale-105 active:scale-95"
+              >
+                <RotateCcw className="mr-2" />
+                Reset Game
+              </Button>
+            </DrawerTrigger>
+            <DrawerPortal>
+              <DrawerOverlay />
+              <DrawerContent>
+                <DrawerHeader className="text-left">
+                  <DrawerTitle>Confirm Reset</DrawerTitle>
+                  <DrawerDescription>
+                    Are you sure you want to reset the game? All current scores
+                    and marks will be lost.
+                  </DrawerDescription>
+                </DrawerHeader>
+                <DrawerFooter className="pt-2">
+                  <Button
+                    variant="destructive"
+                    className="transition duration-150 ease-in-out hover:scale-105 active:scale-95"
+                    onClick={() => {
+                      handleReset();
+                      setIsResetConfirmOpen(false);
+                    }}
+                  >
+                    <RotateCcw className="mr-2" />
+                    Confirm Reset
+                  </Button>
+                  <DrawerClose asChild>
+                    <Button
+                      variant="outline"
+                      className="transition duration-150 ease-in-out hover:scale-105 active:scale-95"
+                    >
+                      Cancel
+                    </Button>
+                  </DrawerClose>
+                </DrawerFooter>
+              </DrawerContent>
+            </DrawerPortal>
+          </Drawer>
+        )}
+
+        {/* Add Penalty Button (Center) */}
+        <Button
+          id="add-penalty-button"
+          className="transition duration-150 ease-in-out hover:scale-105 active:scale-95"
+          onClick={handleAddPenalty}
+          disabled={penalties >= MAX_PENALTIES}
+        >
+          <PlusCircle className="mr-2" />
+          {penalties >= MAX_PENALTIES ? "Max Penalties" : "Add Penalty"}
+        </Button>
+
+        {/* Show/Hide Scores Button (Right) */}
+        <Button
+          id="toggle-scores-button"
+          variant="default"
+          className="transition duration-150 ease-in-out hover:scale-105 active:scale-95"
+          onClick={() => setIsScoreVisible(!isScoreVisible)}
+        >
+          {isScoreVisible ? (
+            <EyeOff className="mr-2" />
+          ) : (
+            <Eye className="mr-2" />
+          )}
+          {isScoreVisible ? "Hide Scores" : "Show Scores"}
+        </Button>
+      </motion.div>
+
       {/* Bonus point animation */}
       {showBonusAnimation.active && (
-        <motion.div 
+        <motion.div
           className="bonus-point-animation"
           initial="hidden"
           animate="visible"
@@ -598,24 +766,26 @@ const QwixxScorecard = () => {
         </motion.div>
       )}
 
-      {/* Penalty button with indicator */}
+      {/* Penalty dots display (button moved to the row above) */}
       <motion.div
-        className="penalties-container mt-6"
+        className="penalties-dots-container mt-6" // Renamed class for clarity, if needed
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.5, duration: 0.5 }}
+        transition={{ delay: 0.5, duration: 0.5 }} // Original delay for penalty section
       >
         <motion.div animate={controls} className="flex flex-col items-center">
           <motion.div
-            className={`penalty-progress mb-2 ${
+            className={`flex justify-center gap-2 mb-2 ${
               penalties >= MAX_PENALTIES ? "penalty-max" : ""
             }`}
           >
             {[...Array(MAX_PENALTIES)].map((_, i) => (
               <motion.div
                 key={`penalty-indicator-${i}`}
-                className={`penalty-dot ${
-                  i < penalties ? "penalty-dot-active" : ""
+                className={`w-3 h-3 rounded-full shadow-sm ${
+                  i < penalties
+                    ? "bg-red-500 shadow-[0_0_8px_rgba(255,59,48,0.5)]"
+                    : "bg-gray-300"
                 }`}
                 initial={{ scale: 0 }}
                 animate={{ scale: i < penalties ? 1 : 0.6 }}
@@ -628,154 +798,114 @@ const QwixxScorecard = () => {
               />
             ))}
           </motion.div>
-          <motion.div
-            variants={buttonVariants}
-            whileHover="hover"
-            whileTap="tap"
-          >
-            <Button
-              className={`penalty-button ${
-                penalties >= MAX_PENALTIES ? "penalty-max-button" : ""
-              }`}
-              onClick={handleAddPenalty}
-              disabled={penalties >= MAX_PENALTIES}
-            >
-              {penalties >= MAX_PENALTIES ? "Max Penalties" : "Add Penalty"}
-            </Button>
-          </motion.div>
+          {/* The Add Penalty Button was here, now it's in the row above */}
         </motion.div>
       </motion.div>
 
+      {/* Score calculation section, shown/hidden by isScoreVisible */}
       <motion.div
         className="mt-4"
         variants={scoreVariants}
         initial="hidden"
         animate={isScoreVisible ? "visible" : "hidden"}
       >
-        <div className="scores-container">
+        <div className="scores-container flex items-center gap-2 mb-4 flex-wrap justify-center sm:justify-start">
           <Input
-            className="red-score w-16 text-center"
+            id="red-score-display"
+            className="w-16 text-center bg-red-200 border border-red-400"
             value={calculatePoints(red.length).toString()}
             readOnly
           />
-          <span className="mt-2">+</span>
+          <span>+</span>
           <Input
-            className="yellow-score w-16 text-center"
+            id="yellow-score-display"
+            className="w-16 text-center bg-yellow-200 border border-yellow-400"
             value={calculatePoints(yellow.length).toString()}
             readOnly
           />
-          <span className="mt-2">+</span>
+          <span>+</span>
           <Input
-            className="green-score w-16 text-center"
+            id="green-score-display"
+            className="w-16 text-center bg-green-200 border border-green-400"
             value={calculatePoints(green.length).toString()}
             readOnly
           />
-          <span className="mt-2">+</span>
+          <span>+</span>
           <Input
-            className="blue-score w-16 text-center"
+            id="blue-score-display"
+            className="w-16 text-center bg-blue-200 border border-blue-400"
             value={calculatePoints(blue.length).toString()}
             readOnly
           />
-          <span className="mt-2">+</span>
+          <span>-</span>
           <Input
-            className="bonus-score w-16 text-center bg-green-50 border-green-300"
-            value={(
-              (isRowLocked("red") ? 1 : 0) +
-              (isRowLocked("yellow") ? 1 : 0) +
-              (isRowLocked("green") ? 1 : 0) +
-              (isRowLocked("blue") ? 1 : 0)
-            ).toString()}
-            readOnly
-            title="Bonus points for locked rows"
-          />
-          <span className="mt-2">-</span>
-          <Input
-            className="penalty-score w-16 text-center"
+            id="penalty-score-display"
+            className="w-16 text-center bg-muted border border-border"
             value={Math.abs(penalties * 5).toString()}
             readOnly
           />
           <span className="mt-2">=</span>
           <Input
-            className="total w-24 text-center font-bold"
+            id="total-score-display"
+            className="w-24 text-center font-bold border border-border bg-background text-foreground"
             value={calculateTotalScore().toString()}
             readOnly
           />
         </div>
       </motion.div>
 
+      {/* Points Breakdown Section, shown/hidden by isScoreVisible */}
       <motion.div
-        className="mt-8"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.8, duration: 0.5 }}
-      >
-        <motion.div variants={buttonVariants} whileHover="hover" whileTap="tap">
-          <Button
-            className="reset-button bg-gray-300 text-black transform transition-all duration-300 hover:bg-gray-400 hover:shadow-md"
-            onClick={handleReset}
-          >
-            Reset Game
-          </Button>
-        </motion.div>
-      </motion.div>
-
-      <motion.div
-        className="mt-8 p-4 border border-gray-200 rounded-md bg-gray-50 shadow-sm"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.9, duration: 0.5 }}
+        className="mt-8 p-4 border border-border rounded-md bg-muted shadow-sm"
+        variants={scoreVariants}
+        initial="hidden"
+        animate={isScoreVisible ? "visible" : "hidden"}
         whileHover={{ boxShadow: "0 4px 12px rgba(0,0,0,0.05)" }}
       >
         <motion.h3
-          className="font-semibold mb-4 text-center"
+          className="font-semibold mb-4 text-center text-foreground"
           initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1.0, duration: 0.5 }}
+          animate={{ opacity: isScoreVisible ? 1 : 0 }}
+          transition={{ delay: isScoreVisible ? 0.1 : 0, duration: 0.5 }}
         >
           Points Breakdown
         </motion.h3>
-        <div className="text-sm grid grid-cols-2 gap-3">
-          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num, index) => {
-            const points = calculatePoints(num);
-            return (
-              <motion.div
-                key={`points-${num}`}
-                className="flex justify-between border-b border-gray-100 pb-1"
-                initial={{ opacity: 0, x: index % 2 === 0 ? -10 : 10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 1.0 + index * 0.05, duration: 0.3 }}
-                whileHover={{ scale: 1.02 }}
+        <div className="w-full max-w-3xl mx-auto">
+          <div className="grid grid-cols-12 gap-1 mb-1">
+            {[...Array(12)].map((_, i) => (
+              <div
+                key={`tick-label-${i}`}
+                className="rounded-md bg-background text-foreground text-xs sm:text-sm font-semibold flex items-center justify-center border border-border py-1"
               >
-                <span>
-                  {num} {num === 1 ? "mark" : "marks"}:{" "}
-                </span>
-                <span className="font-medium">{points} points</span>
-              </motion.div>
-            );
-          })}
+                {i + 1}x
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-12 gap-1">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num, i) => (
+              <div
+                key={`tick-points-${i}`}
+                className="rounded-md bg-background text-foreground text-xs sm:text-sm flex items-center justify-center border border-border py-1"
+              >
+                {calculatePoints(num)}
+              </div>
+            ))}
+          </div>
         </div>
         <motion.div
           className="mt-3 text-sm flex flex-col items-center gap-2"
           initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1.3, duration: 0.5 }}
+          animate={{ opacity: isScoreVisible ? 1 : 0 }}
+          transition={{ delay: isScoreVisible ? 0.4 : 0, duration: 0.5 }}
         >
-          <span className="px-3 py-1 bg-gray-200 rounded-full">
+          <span className="px-3 py-1 bg-muted rounded-full text-muted-foreground">
             Each penalty (X): -5 points
           </span>
-          <motion.span
-            className="px-3 py-1 bg-green-100 rounded-full text-green-800"
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 1.4, duration: 0.3, type: "spring" }}
-          >
-            Locked row (★): +1 bonus point
-          </motion.span>
         </motion.div>
       </motion.div>
 
       <motion.footer
-        className="qwixx-footer mt-10"
+        className="text-[0.8rem] text-muted-foreground mt-8 text-center"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 1.5, duration: 0.8 }}
