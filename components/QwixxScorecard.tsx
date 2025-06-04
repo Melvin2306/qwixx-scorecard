@@ -26,8 +26,18 @@ import {
   DrawerPortal,
 } from "@/components/ui/drawer";
 import { motion, useAnimation, Variants } from "framer-motion";
-import { useEffect, useState, useCallback } from "react";
-import { RotateCcw, PlusCircle, Eye, EyeOff, Info } from "lucide-react";
+import { useEffect, useState, useCallback, useRef, memo } from "react";
+import {
+  RotateCcw,
+  PlusCircle,
+  Eye,
+  EyeOff,
+  Info,
+  Lock,
+  Unlock,
+  Trophy,
+  Flag,
+} from "lucide-react";
 import {
   Dialog as InfoDialog,
   DialogContent as InfoDialogContent,
@@ -53,32 +63,264 @@ function useMediaQuery(query: string) {
   return matches;
 }
 
+// Define the game state type
+type RowColor = "red" | "yellow" | "green" | "blue";
+type LockedRows = { [color in RowColor]: boolean };
+type GameState = {
+  red: number[];
+  yellow: number[];
+  green: number[];
+  blue: number[];
+  lockedRows: LockedRows;
+  penalties: number;
+};
+
+const initialGameState: GameState = {
+  red: [],
+  yellow: [],
+  green: [],
+  blue: [],
+  lockedRows: {
+    red: false,
+    yellow: false,
+    green: false,
+    blue: false,
+  },
+  penalties: 0,
+};
+
+const GAME_STATE_KEY = "qwixx-game-state";
+
+// Define the QwixxCell props type
+type QwixxCellProps = {
+  color: RowColor;
+  num: number;
+  isTicked: boolean;
+  canCurrentlySelect: boolean;
+  isDisabledForNewTick: boolean;
+  isLastCell: boolean;
+  isLocked: boolean;
+  isLastNumberTicked: boolean;
+  latestTickCondition: boolean;
+  handleToggle: (num: number, isTicked: boolean, e: React.MouseEvent) => void;
+  isDesktop: boolean;
+  cellClasses: string;
+  textContainerClasses: string;
+  tooltipMessage: string;
+};
+
+// Memoized QwixxCell component
+const QwixxCell = memo(function QwixxCell({
+  color,
+  num,
+  isTicked,
+  canCurrentlySelect,
+  isDisabledForNewTick,
+  isLastCell,
+  isLocked,
+  isLastNumberTicked,
+  latestTickCondition,
+  handleToggle,
+  isDesktop,
+  cellClasses,
+  textContainerClasses,
+  tooltipMessage,
+}: QwixxCellProps) {
+  return (
+    <td
+      className={
+        isLocked
+          ? `${cellClasses.replace(
+              /opacity-\d{2,3}/g,
+              ""
+            )} cursor-not-allowed relative ${
+              isLastCell ? "overflow-visible" : "overflow-hidden"
+            } rounded-md animate-lock-row`
+          : `${cellClasses.replace(/opacity-\d{2,3}/g, "")} ${
+              isLastCell ? "overflow-visible" : "overflow-hidden"
+            } rounded-md`
+      }
+      onClick={(e) => {
+        if (!isLocked && (canCurrentlySelect || isTicked)) {
+          handleToggle(num, isTicked, e);
+        }
+      }}
+    >
+      <div className="relative w-full h-full">
+        {/* Lock overlay */}
+        {isLocked && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none backdrop-blur"
+          >
+            <motion.span
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{
+                type: "spring",
+                stiffness: 300,
+                damping: 20,
+              }}
+              className={`text-4xl drop-shadow-lg z-40 ${
+                color === "red"
+                  ? "text-red-700"
+                  : color === "yellow"
+                  ? "text-yellow-700"
+                  : color === "green"
+                  ? "text-green-700"
+                  : "text-blue-700"
+              } drop-shadow`}
+              role="img"
+              aria-label="locked"
+            >
+              <Lock />
+            </motion.span>
+          </motion.div>
+        )}
+        {/* Star for locked row on last cell - always on top */}
+        {((color === "red" && num === 12) ||
+          (color === "yellow" && num === 12) ||
+          (color === "green" && num === 2) ||
+          (color === "blue" && num === 2)) &&
+          isLastNumberTicked && (
+            <span className="absolute -right-6 -top-4 text-yellow-400 z-50 text-4xl drop-shadow pointer-events-none">
+              ★
+            </span>
+          )}
+        {isLastCell && isDisabledForNewTick ? (
+          isDesktop ? (
+            <div className="w-full h-full flex items-center justify-center">
+              <div className="group relative w-full h-full flex items-center justify-center">
+                <span className="absolute z-20 left-1/2 top-0 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded bg-muted px-2 py-1 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg border border-border">
+                  {tooltipMessage}
+                </span>
+                <span
+                  className={
+                    textContainerClasses +
+                    (cellClasses.includes("opacity-")
+                      ? " " + (cellClasses.match(/opacity-\d{2,3}/)?.[0] ?? "")
+                      : "")
+                  }
+                >
+                  {num}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <InfoDialog>
+                <InfoDialogTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 text-inherit focus:outline-none"
+                  >
+                    <span
+                      className={
+                        textContainerClasses +
+                        (cellClasses.includes("opacity-")
+                          ? " " +
+                            (cellClasses.match(/opacity-\d{2,3}/)?.[0] ?? "")
+                          : "")
+                      }
+                    >
+                      {num}
+                    </span>
+                    <Info className="ml-1 w-4 h-4 text-muted-foreground" />
+                  </button>
+                </InfoDialogTrigger>
+                <InfoDialogContent className="max-w-xs">
+                  <InfoDialogHeader>
+                    <InfoDialogTitle>Why is this disabled?</InfoDialogTitle>
+                  </InfoDialogHeader>
+                  <div className="text-sm text-muted-foreground">
+                    {tooltipMessage}
+                  </div>
+                </InfoDialogContent>
+              </InfoDialog>
+            </div>
+          )
+        ) : (
+          <div
+            className={textContainerClasses}
+            style={{
+              position: "relative",
+              width: "100%",
+              height: "100%",
+            }}
+          >
+            <span
+              className={
+                cellClasses.includes("opacity-")
+                  ? cellClasses.match(/opacity-\d{2,3}/)?.[0] ?? ""
+                  : ""
+              }
+            >
+              {num}
+            </span>
+          </div>
+        )}
+      </div>
+    </td>
+  );
+});
+
 const QwixxScorecard = () => {
   const isDesktop = useMediaQuery("(min-width: 768px)");
 
-  // State for each color row
-  const [red, setRed] = useState<number[]>([]);
-  const [yellow, setYellow] = useState<number[]>([]);
-  const [green, setGreen] = useState<number[]>([]);
-  const [blue, setBlue] = useState<number[]>([]);
+  // --- Game State ---
+  const [gameState, setGameState] = useState(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem(GAME_STATE_KEY);
+      if (stored) {
+        try {
+          return JSON.parse(stored);
+        } catch {
+          return initialGameState;
+        }
+      }
+    }
+    return initialGameState;
+  });
 
-  // State for penalties
-  const [penalties, setPenalties] = useState<number>(0);
+  // Sync gameState to localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(GAME_STATE_KEY, JSON.stringify(gameState));
+    }
+  }, [gameState]);
+
+  // --- State accessors for convenience ---
+  const { red, yellow, green, blue, lockedRows, penalties } = gameState;
+
+  // Max penalties before game ends
+  const MAX_PENALTIES = 4;
+
+  // Game over state
+  const [gameOver, setGameOver] = useState(false);
+  const [showGameOverDialog, setShowGameOverDialog] = useState(false);
+
+  // Detect game over
+  useEffect(() => {
+    const lockedCount = Object.values(lockedRows).filter(Boolean).length;
+    if (penalties >= MAX_PENALTIES || lockedCount >= 2) {
+      setGameOver(true);
+      setShowGameOverDialog(true);
+    } else {
+      setGameOver(false);
+    }
+  }, [penalties, lockedRows]);
 
   // Animation states
   const [isScoreVisible, setIsScoreVisible] = useState<boolean>(false);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
-
-  // State for animation when row is locked
   const [showBonusAnimation, setShowBonusAnimation] = useState<{
     active: boolean;
     color: string;
     x: number;
     y: number;
   }>({ active: false, color: "", x: 0, y: 0 });
-
-  // Max penalties before game ends
-  const MAX_PENALTIES = 4;
 
   // Animation controls
   const controls = useAnimation();
@@ -181,25 +423,21 @@ const QwixxScorecard = () => {
 
   // Check if a row is locked
   const isRowLocked = (color: "red" | "yellow" | "green" | "blue"): boolean => {
-    const numbers = {
-      red: red,
-      yellow: yellow,
-      green: green,
-      blue: blue,
-    }[color];
-
-    // Row is locked if it has the last number checked (12 for red/yellow, 2 for green/blue)
-    // and has at least 5 numbers checked
-    if (color === "red" && red.includes(12) && red.length >= 5) return true;
-    if (color === "yellow" && yellow.includes(12) && yellow.length >= 5)
-      return true;
-    if (color === "green" && green.includes(2) && green.length >= 5)
-      return true;
-    if (color === "blue" && blue.includes(2) && blue.length >= 5) return true;
-
-    return false;
+    return lockedRows[color];
   };
 
+  // --- State update helpers ---
+  const updateRow = (color: RowColor, newArr: number[]) => {
+    setGameState((prev: GameState) => ({ ...prev, [color]: newArr }));
+  };
+  const updateLockedRows = (newLockedRows: LockedRows) => {
+    setGameState((prev: GameState) => ({ ...prev, lockedRows: newLockedRows }));
+  };
+  const updatePenalties = (newPenalties: number) => {
+    setGameState((prev: GameState) => ({ ...prev, penalties: newPenalties }));
+  };
+
+  // --- Handlers ---
   // Handle checking/unchecking a number in the ascending rows (red & yellow)
   const handleAscendingNumberToggle = (
     color: "red" | "yellow",
@@ -207,29 +445,28 @@ const QwixxScorecard = () => {
     checked: boolean,
     event?: React.MouseEvent<Element, MouseEvent>
   ) => {
-    const setter = color === "red" ? setRed : setYellow;
-    const currentNumbers = color === "red" ? [...red] : [...yellow];
-
+    if (gameOver) return;
+    const currentNumbers = [...gameState[color]];
     if (checked) {
-      // Add number if it's valid
-      if (currentNumbers.every((n) => n < num)) {
-        // For number 12, check if we can lock the row (at least 5 numbers already checked)
+      if (currentNumbers.every((n: number) => n < num)) {
         if (num === 12 && currentNumbers.length < 5) {
-          // Can't select 12 without having 5 numbers already
           return;
         }
-
-        // Check if this action will lock the row (selecting the 12)
         const willLock = num === 12 && currentNumbers.length >= 5;
-
-        // If ticking the last number, add it twice (counts as two marks)
         if (num === 12) {
-          setter([...currentNumbers, num, num].sort((a, b) => a - b));
+          updateRow(
+            color,
+            [...currentNumbers, num, num].sort((a: number, b: number) => a - b)
+          );
+          if (willLock) {
+            updateLockedRows({ ...lockedRows, [color]: true });
+          }
         } else {
-          setter([...currentNumbers, num].sort((a, b) => a - b));
+          updateRow(
+            color,
+            [...currentNumbers, num].sort((a: number, b: number) => a - b)
+          );
         }
-
-        // If locking the row, show bonus animation
         if (willLock && event) {
           const rect = (event.target as HTMLElement).getBoundingClientRect();
           setShowBonusAnimation({
@@ -238,25 +475,24 @@ const QwixxScorecard = () => {
             x: rect.left + rect.width / 2,
             y: rect.top,
           });
-
-          // Reset animation after it completes
           setTimeout(() => {
             setShowBonusAnimation((prev) => ({ ...prev, active: false }));
           }, 1500);
         }
       }
     } else {
-      // Can only uncheck if it's the highest number
       if (Math.max(...currentNumbers) === num) {
-        // If unticking the last number (12), remove all instances of it (to remove both marks if it was a double-tick)
         if (num === 12) {
-          setter(currentNumbers.filter((n) => n !== num));
+          updateRow(
+            color,
+            currentNumbers.filter((n: number) => n !== num)
+          );
+          updateLockedRows({ ...lockedRows, [color]: false });
         } else {
-          // For other numbers, remove only the specific instance
           const index = currentNumbers.lastIndexOf(num);
           if (index !== -1) {
             currentNumbers.splice(index, 1);
-            setter(currentNumbers);
+            updateRow(color, currentNumbers);
           }
         }
       }
@@ -270,29 +506,28 @@ const QwixxScorecard = () => {
     checked: boolean,
     event?: React.MouseEvent<Element, MouseEvent>
   ) => {
-    const setter = color === "green" ? setGreen : setBlue;
-    const currentNumbers = color === "green" ? [...green] : [...blue];
-
+    if (gameOver) return;
+    const currentNumbers = [...gameState[color]];
     if (checked) {
-      // Add number if it's valid
-      if (currentNumbers.every((n) => n > num)) {
-        // For number 2, check if we can lock the row (at least 5 numbers already checked)
+      if (currentNumbers.every((n: number) => n > num)) {
         if (num === 2 && currentNumbers.length < 5) {
-          // Can't select 2 without having 5 numbers already
           return;
         }
-
-        // Check if this action will lock the row (selecting the 2)
         const willLock = num === 2 && currentNumbers.length >= 5;
-
-        // If ticking the last number, add it twice (counts as two marks)
         if (num === 2) {
-          setter([...currentNumbers, num, num].sort((a, b) => b - a));
+          updateRow(
+            color,
+            [...currentNumbers, num, num].sort((a: number, b: number) => b - a)
+          );
+          if (willLock) {
+            updateLockedRows({ ...lockedRows, [color]: true });
+          }
         } else {
-          setter([...currentNumbers, num].sort((a, b) => b - a));
+          updateRow(
+            color,
+            [...currentNumbers, num].sort((a: number, b: number) => b - a)
+          );
         }
-
-        // If locking the row, show bonus animation
         if (willLock && event) {
           const rect = (event.target as HTMLElement).getBoundingClientRect();
           setShowBonusAnimation({
@@ -301,25 +536,23 @@ const QwixxScorecard = () => {
             x: rect.left + rect.width / 2,
             y: rect.top,
           });
-
-          // Reset animation after it completes
           setTimeout(() => {
             setShowBonusAnimation((prev) => ({ ...prev, active: false }));
           }, 1500);
         }
       }
     } else {
-      // Can only uncheck if it's the lowest number
       if (Math.min(...currentNumbers) === num) {
-        // If unticking the last number (2), remove all instances of it (to remove both marks if it was a double-tick)
         if (num === 2) {
-          setter(currentNumbers.filter((n) => n !== num));
+          updateRow(
+            color,
+            currentNumbers.filter((n: number) => n !== num)
+          );
         } else {
-          // For other numbers, remove only the specific instance
           const index = currentNumbers.lastIndexOf(num);
           if (index !== -1) {
             currentNumbers.splice(index, 1);
-            setter(currentNumbers);
+            updateRow(color, currentNumbers);
           }
         }
       }
@@ -328,9 +561,9 @@ const QwixxScorecard = () => {
 
   // Handle adding a penalty
   const handleAddPenalty = () => {
+    if (gameOver) return;
     if (penalties < MAX_PENALTIES) {
-      setPenalties((prev) => prev + 1);
-      // Apply animation for penalty
+      updatePenalties(penalties + 1);
       controls.start({
         scale: [1, 1.2, 1],
         transition: { duration: 0.3 },
@@ -340,11 +573,12 @@ const QwixxScorecard = () => {
 
   // Handle reset
   const handleReset = () => {
-    setRed([]);
-    setYellow([]);
-    setGreen([]);
-    setBlue([]);
-    setPenalties(0);
+    setGameState(initialGameState);
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(GAME_STATE_KEY);
+    }
+    setGameOver(false);
+    setShowGameOverDialog(false);
   };
 
   // Check if number can be selected or unticked (for unticking, allow the last ticked number to be enabled)
@@ -352,6 +586,7 @@ const QwixxScorecard = () => {
     color: "red" | "yellow" | "green" | "blue",
     num: number
   ): boolean => {
+    if (isRowLocked(color)) return false;
     const currentNumbers = {
       red: red,
       yellow: yellow,
@@ -387,21 +622,23 @@ const QwixxScorecard = () => {
         if (num === 12) {
           // Ticking 12 (last number for ascending)
           return (
-            currentNumbers.every((n) => n < num) && currentNumbers.length >= 5
+            currentNumbers.every((n: number) => n < num) &&
+            currentNumbers.length >= 5
           );
         }
         // Ticking other numbers for ascending rows
-        return currentNumbers.every((n) => n < num);
+        return currentNumbers.every((n: number) => n < num);
       } else {
         // green or blue
         if (num === 2) {
           // Ticking 2 (last number for descending)
           return (
-            currentNumbers.every((n) => n > num) && currentNumbers.length >= 5
+            currentNumbers.every((n: number) => n > num) &&
+            currentNumbers.length >= 5
           );
         }
         // Ticking other numbers for descending rows
-        return currentNumbers.every((n) => n > num);
+        return currentNumbers.every((n: number) => n > num);
       }
     }
   };
@@ -442,205 +679,297 @@ const QwixxScorecard = () => {
     const colorPalettes = {
       red: {
         untickedBg: "bg-red-200",
-        untickedText: "text-red-900",
+        untickedText: "text-red-800",
         untickedHover: "hover:bg-red-300",
-        tickedBg: "bg-red-400",
+        tickedBg: "bg-red-500",
         tickedText: "text-white",
-        tickedHover: "hover:bg-red-500",
+        tickedHover: "hover:bg-red-600",
       },
       yellow: {
         untickedBg: "bg-yellow-200",
-        untickedText: "text-yellow-900",
+        untickedText: "text-yellow-800",
         untickedHover: "hover:bg-yellow-300",
-        tickedBg: "bg-yellow-300",
-        tickedText: "text-black",
-        tickedHover: "hover:bg-yellow-400",
+        tickedBg: "bg-yellow-600",
+        tickedText: "text-white",
+        tickedHover: "hover:bg-yellow-700",
       },
       green: {
         untickedBg: "bg-green-200",
-        untickedText: "text-green-900",
+        untickedText: "text-green-800",
         untickedHover: "hover:bg-green-300",
-        tickedBg: "bg-green-400",
+        tickedBg: "bg-green-500",
         tickedText: "text-white",
-        tickedHover: "hover:bg-green-500",
+        tickedHover: "hover:bg-green-600",
       },
       blue: {
         untickedBg: "bg-blue-200",
-        untickedText: "text-blue-900",
+        untickedText: "text-blue-800",
         untickedHover: "hover:bg-blue-300",
-        tickedBg: "bg-blue-400",
+        tickedBg: "bg-blue-500",
         tickedText: "text-white",
-        tickedHover: "hover:bg-blue-500",
+        tickedHover: "hover:bg-blue-600",
       },
     };
 
     const palette = colorPalettes[color];
 
-    return numbersArray.map((num, index, arr) => {
-      const isTicked = stateArray.includes(num);
-      const canCurrentlySelect = canSelectNumber(color, num);
-      const isDisabledForNewTick = !canCurrentlySelect && !isTicked;
-      const isLastCell =
-        (isAscending && num === 12) || (!isAscending && num === 2);
+    // For red row, add lock button and lock indicator
+    const isLocked = isRowLocked(color);
 
-      let latestTickCondition;
-      if (isAscending) {
-        latestTickCondition =
-          isTicked &&
-          Math.max(...stateArray.filter((n) => typeof n === "number")) ===
-            num &&
-          stateArray.filter((n) => n === num).length > 0;
-        if (num === 12 && stateArray.filter((n) => n === 12).length > 1)
-          latestTickCondition = true; // Ensure double marked 12 shows ring
-      } else {
-        latestTickCondition =
-          isTicked &&
-          Math.min(...stateArray.filter((n) => typeof n === "number")) ===
-            num &&
-          stateArray.filter((n) => n === num).length > 0;
-        if (num === 2 && stateArray.filter((n) => n === 2).length > 1)
-          latestTickCondition = true; // Ensure double marked 2 shows ring
-      }
+    // Color palette for lock button and overlay
+    const lockButtonPalette = {
+      red: {
+        border: "border-red-400",
+        bg: "bg-red-200",
+        hover: "hover:bg-red-100",
+        text: "text-red-500",
+        icon: "text-red-700 drop-shadow",
+      },
+      yellow: {
+        border: "border-yellow-400",
+        bg: "bg-yellow-200",
+        hover: "hover:bg-yellow-100",
+        text: "text-yellow-500",
+        icon: "text-yellow-700 drop-shadow",
+      },
+      green: {
+        border: "border-green-400",
+        bg: "bg-green-200",
+        hover: "hover:bg-green-100",
+        text: "text-green-500",
+        icon: "text-green-700 drop-shadow",
+      },
+      blue: {
+        border: "border-blue-400",
+        bg: "bg-blue-200",
+        hover: "hover:bg-blue-100",
+        text: "text-blue-500",
+        icon: "text-blue-700 drop-shadow",
+      },
+    }[color];
 
-      let cellClasses =
-        "w-12 h-12 rounded-md font-bold text-xl transition-all duration-150 cursor-pointer px-2";
-      const textContainerClasses =
-        "w-full h-full flex items-center justify-center";
+    // Show the star only if the last number is ticked (regardless of lock state)
+    const isLastNumberTicked =
+      color === "red" || color === "yellow"
+        ? stateArray.filter((n: number) => n === 12).length > 0
+        : stateArray.filter((n: number) => n === 2).length > 0;
 
-      if (isTicked) {
-        cellClasses += ` ${palette.tickedBg} ${palette.tickedText}`;
-        if (canCurrentlySelect) {
-          // Only allow hover if it's the one that can be unticked
-          cellClasses += ` ${palette.tickedHover}`;
-        }
-        if (latestTickCondition) {
-          cellClasses += " opacity-100";
-        } else {
-          cellClasses += " opacity-60";
-        }
-      } else {
-        cellClasses += ` ${palette.untickedBg} ${palette.untickedText}`;
-        if (canCurrentlySelect) {
-          cellClasses += ` ${palette.untickedHover}`;
-        }
-      }
+    return (
+      <>
+        {numbersArray.map((num, index, arr) => {
+          const isTicked = stateArray.includes(num);
+          const canCurrentlySelect = !gameOver && canSelectNumber(color, num);
+          const isDisabledForNewTick = !canCurrentlySelect && !isTicked;
+          const isLastCell =
+            (isAscending && num === 12) || (!isAscending && num === 2);
 
-      if (isDisabledForNewTick) {
-        cellClasses += " opacity-20 cursor-not-allowed";
-      }
-
-      // Add specific rounding for first/last cells in the visual row
-      if (index === 0)
-        cellClasses += isAscending ? " rounded-l-md" : " rounded-l-md"; // All rows start left
-      if (index === arr.length - 1)
-        cellClasses += isAscending ? " rounded-r-md" : " rounded-r-md"; // All rows end right
-
-      // Tooltip/Info logic for last cell if disabled
-      const tooltipMessage = "You need min 5 fields checked";
-
-      return (
-        <td
-          key={`${color}-${num}`}
-          className={cellClasses.replace(/opacity-\d{2,3}/g, "")}
-          onClick={(e) => {
-            if (canCurrentlySelect || isTicked) {
-              handleToggle(num, isTicked, e);
-            }
-          }}
-        >
-          {isLastCell && isDisabledForNewTick ? (
-            isDesktop ? (
-              <div className="w-full h-full flex items-center justify-center">
-                <div className="group relative w-full h-full flex items-center justify-center">
-                  <span className="absolute z-20 left-1/2 top-0 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded bg-muted px-2 py-1 text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition pointer-events-none shadow-lg border border-border">
-                    {tooltipMessage}
-                  </span>
-                  <span
-                    className={
-                      textContainerClasses +
-                      (cellClasses.includes("opacity-")
-                        ? " " +
-                          (cellClasses.match(/opacity-\d{2,3}/)?.[0] ?? "")
-                        : "")
-                    }
-                  >
-                    {num}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <InfoDialog>
-                  <InfoDialogTrigger asChild>
-                    <button
-                      type="button"
-                      className="flex items-center gap-1 text-inherit focus:outline-none"
-                    >
-                      <span
-                        className={
-                          textContainerClasses +
-                          (cellClasses.includes("opacity-")
-                            ? " " +
-                              (cellClasses.match(/opacity-\d{2,3}/)?.[0] ?? "")
-                            : "")
-                        }
-                      >
-                        {num}
-                      </span>
-                      <Info className="ml-1 w-4 h-4 text-muted-foreground" />
-                    </button>
-                  </InfoDialogTrigger>
-                  <InfoDialogContent className="max-w-xs">
-                    <InfoDialogHeader>
-                      <InfoDialogTitle>Why is this disabled?</InfoDialogTitle>
-                    </InfoDialogHeader>
-                    <div className="text-sm text-muted-foreground">
-                      {tooltipMessage}
-                    </div>
-                  </InfoDialogContent>
-                </InfoDialog>
-              </div>
+          let latestTickCondition;
+          if (isAscending) {
+            latestTickCondition =
+              isTicked &&
+              Math.max(
+                ...stateArray.filter((n: number) => typeof n === "number")
+              ) === num &&
+              stateArray.filter((n: number) => n === num).length > 0;
+            if (
+              num === 12 &&
+              stateArray.filter((n: number) => n === 12).length > 1
             )
-          ) : (
-            <div
-              className={textContainerClasses}
-              style={{ position: "relative", width: "100%", height: "100%" }}
-            >
-              <span
-                className={
-                  cellClasses.includes("opacity-")
-                    ? cellClasses.match(/opacity-\d{2,3}/)?.[0] ?? ""
-                    : ""
-                }
-              >
-                {num}
-              </span>
-              {/* Star for locked row on last cell */}
-              {(color === "red" || color === "yellow") &&
-                num === 12 &&
-                isRowLocked(color) && (
-                  <span className="absolute -right-1 -bottom-1 text-yellow-400 z-10 text-2xl drop-shadow">
-                    ★
-                  </span>
-                )}
-              {(color === "green" || color === "blue") &&
-                num === 2 &&
-                isRowLocked(color) && (
-                  <span className="absolute -right-1 -bottom-1 text-yellow-400 z-10 text-2xl drop-shadow">
-                    ★
-                  </span>
-                )}
-            </div>
-          )}
+              latestTickCondition = true; // Ensure double marked 12 shows ring
+          } else {
+            latestTickCondition =
+              isTicked &&
+              Math.min(
+                ...stateArray.filter((n: number) => typeof n === "number")
+              ) === num &&
+              stateArray.filter((n: number) => n === num).length > 0;
+            if (
+              num === 2 &&
+              stateArray.filter((n: number) => n === 2).length > 1
+            )
+              latestTickCondition = true; // Ensure double marked 2 shows ring
+          }
+
+          let cellClasses =
+            "w-12 h-12 rounded-md font-bold text-xl transition-all duration-150 cursor-pointer px-2";
+          const textContainerClasses =
+            "w-full h-full flex items-center justify-center";
+
+          if (isTicked) {
+            cellClasses += ` ${palette.tickedBg} ${palette.tickedText}`;
+            if (canCurrentlySelect) {
+              // Only allow hover if it's the one that can be unticked
+              cellClasses += ` ${palette.tickedHover}`;
+            }
+            if (latestTickCondition) {
+              cellClasses += " opacity-100";
+            } else {
+              cellClasses += " opacity-60";
+            }
+          } else {
+            cellClasses += ` ${palette.untickedBg} ${palette.untickedText}`;
+            if (canCurrentlySelect) {
+              cellClasses += ` ${palette.untickedHover}`;
+            }
+          }
+
+          if (isDisabledForNewTick) {
+            cellClasses += " opacity-20 cursor-not-allowed";
+          }
+
+          // Add specific rounding for first/last cells in the visual row
+          if (index === 0)
+            cellClasses += isAscending ? " rounded-l-md" : " rounded-l-md"; // All rows start left
+          if (index === arr.length - 1)
+            cellClasses += isAscending ? " rounded-r-md" : " rounded-r-md"; // All rows end right
+
+          // Tooltip/Info logic for last cell if disabled
+          const tooltipMessage = "You need min 5 fields checked";
+
+          return (
+            <QwixxCell
+              key={`${color}-${num}`}
+              color={color}
+              num={num}
+              isTicked={isTicked}
+              canCurrentlySelect={canCurrentlySelect}
+              isDisabledForNewTick={isDisabledForNewTick}
+              isLastCell={isLastCell}
+              isLocked={isLocked}
+              isLastNumberTicked={isLastNumberTicked}
+              latestTickCondition={latestTickCondition}
+              handleToggle={handleToggle}
+              isDesktop={isDesktop}
+              cellClasses={cellClasses}
+              textContainerClasses={textContainerClasses}
+              tooltipMessage={tooltipMessage}
+            />
+          );
+        })}
+        {/* Lock button at the end of the row for all colors */}
+        <td key={`${color}-lock-btn-end`} className="pl-2 align-middle">
+          <Button
+            size="icon"
+            variant={isLocked ? "secondary" : "outline"}
+            className={`rounded-full border-2 ${
+              lockButtonPalette.border
+            } shadow transition-all duration-300 flex items-center justify-center ${
+              lockButtonPalette.text
+            } ${
+              isLocked
+                ? `${lockButtonPalette.bg} ${lockButtonPalette.border} animate-lock-pop`
+                : lockButtonPalette.hover
+            }`}
+            aria-label={isLocked ? "Unlock row" : "Lock row"}
+            onClick={() => {
+              updateLockedRows({ ...lockedRows, [color]: !isLocked });
+            }}
+          >
+            {isLocked ? (
+              <Lock className={`w-6 h-6 ${lockButtonPalette.icon}`} />
+            ) : (
+              <Unlock className={`w-6 h-6 ${lockButtonPalette.icon}`} />
+            )}
+          </Button>
         </td>
-      );
-    });
+      </>
+    );
   };
 
   const redNumbers = Array.from({ length: 11 }, (_, i) => i + 2); // 2 to 12
   const yellowNumbers = Array.from({ length: 11 }, (_, i) => i + 2); // 2 to 12
   const greenNumbers = Array.from({ length: 11 }, (_, i) => 12 - i); // 12 to 2
   const blueNumbers = Array.from({ length: 11 }, (_, i) => 12 - i); // 12 to 2
+
+  // Add at the top of QwixxScorecard component state:
+  const [penaltyHold, setPenaltyHold] = useState(0); // 0 to 1
+  const [isPenaltyHolding, setIsPenaltyHolding] = useState(false);
+  const penaltyHoldRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Add these handlers inside QwixxScorecard:
+  const startPenaltyHold = () => {
+    if (penalties >= MAX_PENALTIES) return;
+    setIsPenaltyHolding(true);
+    const start = Date.now();
+    setPenaltyHold(0);
+    penaltyHoldRef.current = setInterval(() => {
+      const elapsed = Date.now() - start;
+      setPenaltyHold(Math.min(elapsed / 2000, 1));
+      if (elapsed >= 2000) {
+        clearInterval(penaltyHoldRef.current!);
+        setPenaltyHold(1);
+        setIsPenaltyHolding(false);
+        handleAddPenalty();
+        setTimeout(() => setPenaltyHold(0), 400); // animate fill out
+      }
+    }, 16);
+  };
+  const stopPenaltyHold = () => {
+    setIsPenaltyHolding(false);
+    setPenaltyHold(0);
+    if (penaltyHoldRef.current) clearInterval(penaltyHoldRef.current);
+  };
+
+  // Game Over Dialog
+  const GameOverDialog = (
+    <Dialog open={showGameOverDialog} onOpenChange={setShowGameOverDialog}>
+      <DialogContent className="max-w-[95vw] max-h-[70vh] p-2 overflow-y-auto text-center flex flex-col items-center justify-center">
+        <motion.div
+          initial={{ scale: 0.7, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 200, damping: 18 }}
+          className="flex flex-row items-center justify-center gap-2 mb-2"
+        >
+          <motion.span
+            initial={{ y: 0 }}
+            animate={{ y: [0, -6, 0] }}
+            transition={{ repeat: Infinity, duration: 1.2, ease: "easeInOut" }}
+          >
+            <Trophy className="text-yellow-400 drop-shadow" size={28} />
+          </motion.span>
+          <motion.span
+            initial={{ rotate: -10 }}
+            animate={{ rotate: [-10, 10, -10] }}
+            transition={{ repeat: Infinity, duration: 1.6, ease: "easeInOut" }}
+          >
+            <Flag className="text-blue-500 drop-shadow" size={22} />
+          </motion.span>
+        </motion.div>
+        <DialogHeader>
+          <DialogTitle className="text-base font-bold mb-1">
+            Game Over!
+          </DialogTitle>
+          <DialogDescription className="mb-2 text-sm">
+            Final Score:{" "}
+            <span className="font-bold text-lg text-primary">
+              {calculateTotalScore()}
+            </span>
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-1 mt-1 w-full">
+          <Button
+            variant="destructive"
+            size="sm"
+            className="w-full"
+            onClick={() => {
+              handleReset();
+              setShowGameOverDialog(false);
+            }}
+          >
+            <RotateCcw className="mr-2" size={16} /> Reset Game
+          </Button>
+          <Button
+            variant="default"
+            size="sm"
+            className="w-full"
+            onClick={() => setShowGameOverDialog(false)}
+          >
+            Show Board / Done
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 
   return (
     <motion.div
@@ -649,42 +978,45 @@ const QwixxScorecard = () => {
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
     >
-      <table className="w-full border-separate border-spacing-y-3 border-spacing-x-2 mb-2">
-        <tbody className="space-y-2">
-          <motion.tr
-            variants={tableRowVariants}
-            initial="hidden"
-            animate="visible"
-            custom={0}
-          >
-            {renderRowCells("red", redNumbers, true)}
-          </motion.tr>
-          <motion.tr
-            variants={tableRowVariants}
-            initial="hidden"
-            animate="visible"
-            custom={1}
-          >
-            {renderRowCells("yellow", yellowNumbers, true)}
-          </motion.tr>
-          <motion.tr
-            variants={tableRowVariants}
-            initial="hidden"
-            animate="visible"
-            custom={2}
-          >
-            {renderRowCells("green", greenNumbers, false)}
-          </motion.tr>
-          <motion.tr
-            variants={tableRowVariants}
-            initial="hidden"
-            animate="visible"
-            custom={3}
-          >
-            {renderRowCells("blue", blueNumbers, false)}
-          </motion.tr>
-        </tbody>
-      </table>
+      {GameOverDialog}
+      <div className="w-full overflow-x-auto">
+        <table className="w-full min-w-[600px] border-separate border-spacing-y-3 border-spacing-x-2 mb-2">
+          <tbody className="space-y-2">
+            <motion.tr
+              variants={tableRowVariants}
+              initial="hidden"
+              animate="visible"
+              custom={0}
+            >
+              {renderRowCells("red", redNumbers, true)}
+            </motion.tr>
+            <motion.tr
+              variants={tableRowVariants}
+              initial="hidden"
+              animate="visible"
+              custom={1}
+            >
+              {renderRowCells("yellow", yellowNumbers, true)}
+            </motion.tr>
+            <motion.tr
+              variants={tableRowVariants}
+              initial="hidden"
+              animate="visible"
+              custom={2}
+            >
+              {renderRowCells("green", greenNumbers, false)}
+            </motion.tr>
+            <motion.tr
+              variants={tableRowVariants}
+              initial="hidden"
+              animate="visible"
+              custom={3}
+            >
+              {renderRowCells("blue", blueNumbers, false)}
+            </motion.tr>
+          </tbody>
+        </table>
+      </div>
 
       {/* Main Action Buttons Row */}
       <motion.div
@@ -794,12 +1126,30 @@ const QwixxScorecard = () => {
         {/* Add Penalty Button (Center) */}
         <Button
           id="add-penalty-button"
-          className="transition duration-150 ease-in-out hover:scale-105 active:scale-95"
-          onClick={handleAddPenalty}
-          disabled={penalties >= MAX_PENALTIES}
+          className="relative transition duration-150 ease-in-out hover:scale-105 active:scale-95 overflow-hidden"
+          onMouseDown={startPenaltyHold}
+          onMouseUp={stopPenaltyHold}
+          onMouseLeave={stopPenaltyHold}
+          onTouchStart={startPenaltyHold}
+          onTouchEnd={stopPenaltyHold}
+          disabled={penalties >= MAX_PENALTIES || isPenaltyHolding || gameOver}
+          style={{ position: "relative" }}
         >
-          <PlusCircle className="mr-2" />
-          {penalties >= MAX_PENALTIES ? "Max Penalties" : "Add Penalty"}
+          {/* Progress overlay */}
+          <motion.div
+            className="absolute inset-0 z-10 bg-red-500/60 pointer-events-none"
+            initial={{ opacity: 0, scaleX: 0 }}
+            animate={{
+              opacity: isPenaltyHolding || penaltyHold === 1 ? 1 : 0,
+              scaleX: penaltyHold,
+            }}
+            style={{ originX: 0 }}
+            transition={{ type: "tween", duration: 0.1 }}
+          />
+          <PlusCircle className="mr-2 relative z-20" />
+          <span className="relative z-20">
+            {penalties >= MAX_PENALTIES ? "Max Penalties" : "Add Penalty"}
+          </span>
         </Button>
 
         {/* Show/Hide Scores Button (Right) */}
