@@ -37,6 +37,7 @@ import {
   Unlock,
   Trophy,
   Flag,
+  ChevronLeft,
 } from "lucide-react";
 import {
   Dialog as InfoDialog,
@@ -910,10 +911,13 @@ const QwixxScorecard = () => {
     if (penaltyHoldRef.current) clearInterval(penaltyHoldRef.current);
   };
 
+  // State for showing score breakdown in game over dialog
+  const [showBreakdown, setShowBreakdown] = useState(false);
+
   // Game Over Dialog
   const GameOverDialog = (
     <Dialog open={showGameOverDialog} onOpenChange={setShowGameOverDialog}>
-      <DialogContent className="max-w-[95vw] max-h-[70vh] p-2 overflow-y-auto text-center flex flex-col items-center justify-center">
+      <DialogContent className=" max-h-[70vh] overflow-y-auto text-center flex flex-col items-center justify-center">
         <motion.div
           initial={{ scale: 0.7, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -927,13 +931,6 @@ const QwixxScorecard = () => {
           >
             <Trophy className="text-yellow-400 drop-shadow" size={28} />
           </motion.span>
-          <motion.span
-            initial={{ rotate: -10 }}
-            animate={{ rotate: [-10, 10, -10] }}
-            transition={{ repeat: Infinity, duration: 1.6, ease: "easeInOut" }}
-          >
-            <Flag className="text-blue-500 drop-shadow" size={22} />
-          </motion.span>
         </motion.div>
         <DialogHeader>
           <DialogTitle className="text-base font-bold mb-1">
@@ -946,27 +943,113 @@ const QwixxScorecard = () => {
             </span>
           </DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col gap-1 mt-1 w-full">
-          <Button
-            variant="destructive"
-            size="sm"
-            className="w-full"
-            onClick={() => {
-              handleReset();
-              setShowGameOverDialog(false);
-            }}
-          >
-            <RotateCcw className="mr-2" size={16} /> Reset Game
-          </Button>
-          <Button
-            variant="default"
-            size="sm"
-            className="w-full"
-            onClick={() => setShowGameOverDialog(false)}
-          >
-            Show Board / Done
-          </Button>
-        </div>
+        {showBreakdown ? (
+          <>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute left-3 top-3 z-10"
+              onClick={() => setShowBreakdown(false)}
+              aria-label="Back"
+            >
+              <ChevronLeft />
+            </Button>
+            <div className="w-full mt-2 mb-2fox: pt-2">
+              <div className="scores-container flex items-center gap-2 mb-4 flex-wrap justify-center sm:justify-start">
+                <Input
+                  id="red-score-display"
+                  className="w-12 text-center bg-red-200 border border-red-400 text-xs"
+                  value={calculatePoints(red.length).toString()}
+                  readOnly
+                />
+                <span>+</span>
+                <Input
+                  id="yellow-score-display"
+                  className="w-12 text-center bg-yellow-200 border border-yellow-400 text-xs"
+                  value={calculatePoints(yellow.length).toString()}
+                  readOnly
+                />
+                <span>+</span>
+                <Input
+                  id="green-score-display"
+                  className="w-12 text-center bg-green-200 border border-green-400 text-xs"
+                  value={calculatePoints(green.length).toString()}
+                  readOnly
+                />
+                <span>+</span>
+                <Input
+                  id="blue-score-display"
+                  className="w-12 text-center bg-blue-200 border border-blue-400 text-xs"
+                  value={calculatePoints(blue.length).toString()}
+                  readOnly
+                />
+                <span>-</span>
+                <Input
+                  id="penalty-score-display"
+                  className="w-12 text-center bg-muted border border-border text-xs"
+                  value={Math.abs(penalties * 5).toString()}
+                  readOnly
+                />
+                <span className="mt-2">=</span>
+                <Input
+                  id="total-score-display"
+                  className="w-16 text-center font-bold border border-border bg-background text-foreground text-xs"
+                  value={calculateTotalScore().toString()}
+                  readOnly
+                />
+              </div>
+              <div className="w-full max-w-3xl mx-auto">
+                <div className="grid grid-cols-12 gap-1 mb-1">
+                  {Array.from({ length: 12 }, (_, i) => (
+                    <div
+                      key={`tick-label-${i}`}
+                      className="rounded-md bg-background text-foreground text-[10px] sm:text-xs font-semibold flex items-center justify-center border border-border py-1"
+                    >
+                      {i + 1}x
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-12 gap-1">
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num, i) => (
+                    <div
+                      key={`tick-points-${i}`}
+                      className="rounded-md bg-background text-foreground text-[10px] sm:text-xs flex items-center justify-center border border-border py-1"
+                    >
+                      {calculatePoints(num)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="mt-3 text-xs flex flex-col items-center gap-2">
+                <span className="px-3 py-1 bg-muted rounded-full text-muted-foreground">
+                  Each penalty (X): -5 points
+                </span>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-row gap-2 mt-1 w-full">
+            <Button
+              variant="destructive"
+              size="sm"
+              className="flex-1"
+              onClick={() => {
+                handleReset();
+                setShowGameOverDialog(false);
+              }}
+            >
+              <RotateCcw className="mr-2" size={16} /> Reset Game
+            </Button>
+            <Button
+              variant="default"
+              size="sm"
+              className="flex-1"
+              onClick={() => setShowBreakdown(true)}
+            >
+              Show Score Breakdown
+            </Button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -1126,7 +1209,7 @@ const QwixxScorecard = () => {
         {/* Add Penalty Button (Center) */}
         <Button
           id="add-penalty-button"
-          className="relative transition duration-150 ease-in-out hover:scale-105 active:scale-95 overflow-hidden"
+          className="relative transition duration-150 ease-in-out hover:scale-105 active:scale-95 overflow-hidden select-none"
           onMouseDown={startPenaltyHold}
           onMouseUp={stopPenaltyHold}
           onMouseLeave={stopPenaltyHold}
@@ -1297,7 +1380,7 @@ const QwixxScorecard = () => {
         </motion.h3>
         <div className="w-full max-w-3xl mx-auto">
           <div className="grid grid-cols-12 gap-1 mb-1">
-            {[...Array(12)].map((_, i) => (
+            {Array.from({ length: 12 }, (_, i) => (
               <div
                 key={`tick-label-${i}`}
                 className="rounded-md bg-background text-foreground text-xs sm:text-sm font-semibold flex items-center justify-center border border-border py-1"
