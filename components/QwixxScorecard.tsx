@@ -1292,7 +1292,9 @@ const QwixxScorecard = () => {
           />
           <PlusCircle className="mr-2 relative z-20" />
           <span className="relative z-20">
-            {penalties >= MAX_PENALTIES ? "Max Penalties" : "Add Penalty"}
+            {penalties >= MAX_PENALTIES
+              ? "Max Penalties"
+              : "Hold to add Penalty"}
           </span>
         </Button>
 
