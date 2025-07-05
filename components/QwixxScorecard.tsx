@@ -108,6 +108,7 @@ type QwixxCellProps = {
   cellClasses: string;
   textContainerClasses: string;
   tooltipMessage: string;
+  isPenaltyHolding: boolean;
 };
 
 // Memoized QwixxCell component
@@ -126,6 +127,7 @@ const QwixxCell = memo(function QwixxCell({
   cellClasses,
   textContainerClasses,
   tooltipMessage,
+  isPenaltyHolding,
 }: QwixxCellProps) {
   return (
     <td
@@ -216,6 +218,24 @@ const QwixxCell = memo(function QwixxCell({
                   <button
                     type="button"
                     className="flex items-center gap-1 text-inherit focus:outline-none"
+                    onMouseDown={(e) => {
+                      if (isPenaltyHolding) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (document.activeElement instanceof HTMLElement) {
+                          document.activeElement.blur();
+                        }
+                      }
+                    }}
+                    onTouchStart={(e) => {
+                      if (isPenaltyHolding) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (document.activeElement instanceof HTMLElement) {
+                          document.activeElement.blur();
+                        }
+                      }
+                    }}
                   >
                     <span
                       className={
@@ -792,7 +812,7 @@ const QwixxScorecard = () => {
           }
 
           let cellClasses =
-            "w-12 h-12 rounded-md font-bold text-xl transition-all duration-150 cursor-pointer px-2";
+            "w-10 h-10 sm:w-12 sm:h-12 rounded-md font-bold text-lg sm:text-xl transition-all duration-150 cursor-pointer px-1 sm:px-2";
           const textContainerClasses =
             "w-full h-full flex items-center justify-center";
 
@@ -844,6 +864,7 @@ const QwixxScorecard = () => {
               cellClasses={cellClasses}
               textContainerClasses={textContainerClasses}
               tooltipMessage={tooltipMessage}
+              isPenaltyHolding={isPenaltyHolding}
             />
           );
         })}
@@ -865,6 +886,8 @@ const QwixxScorecard = () => {
             onClick={() => {
               updateLockedRows({ ...lockedRows, [color]: !isLocked });
             }}
+            onMouseDown={handleButtonInteraction}
+            onTouchStart={handleButtonInteraction}
           >
             {isLocked ? (
               <Lock className={`w-6 h-6 ${lockButtonPalette.icon}`} />
@@ -895,8 +918,8 @@ const QwixxScorecard = () => {
     setPenaltyHold(0);
     penaltyHoldRef.current = setInterval(() => {
       const elapsed = Date.now() - start;
-      setPenaltyHold(Math.min(elapsed / 2000, 1));
-      if (elapsed >= 2000) {
+      setPenaltyHold(Math.min(elapsed / 1000, 1));
+      if (elapsed >= 1000) {
         clearInterval(penaltyHoldRef.current!);
         setPenaltyHold(1);
         setIsPenaltyHolding(false);
@@ -909,6 +932,18 @@ const QwixxScorecard = () => {
     setIsPenaltyHolding(false);
     setPenaltyHold(0);
     if (penaltyHoldRef.current) clearInterval(penaltyHoldRef.current);
+  };
+
+  // Prevent iOS text selection and focus during penalty hold
+  const handleButtonInteraction = (e: React.MouseEvent | React.TouchEvent) => {
+    if (isPenaltyHolding) {
+      e.preventDefault();
+      e.stopPropagation();
+      // Blur any focused element to prevent iOS focus ring
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+    }
   };
 
   // State for showing score breakdown in game over dialog
@@ -951,6 +986,8 @@ const QwixxScorecard = () => {
               className="absolute left-3 top-3 z-10"
               onClick={() => setShowBreakdown(false)}
               aria-label="Back"
+              onMouseDown={handleButtonInteraction}
+              onTouchStart={handleButtonInteraction}
             >
               <ChevronLeft />
             </Button>
@@ -1037,6 +1074,8 @@ const QwixxScorecard = () => {
                 handleReset();
                 setShowGameOverDialog(false);
               }}
+              onMouseDown={handleButtonInteraction}
+              onTouchStart={handleButtonInteraction}
             >
               <RotateCcw className="mr-2" size={16} /> Reset Game
             </Button>
@@ -1045,6 +1084,8 @@ const QwixxScorecard = () => {
               size="sm"
               className="flex-1"
               onClick={() => setShowBreakdown(true)}
+              onMouseDown={handleButtonInteraction}
+              onTouchStart={handleButtonInteraction}
             >
               Show Score Breakdown
             </Button>
@@ -1056,14 +1097,18 @@ const QwixxScorecard = () => {
 
   return (
     <motion.div
-      className="w-full mx-auto text-[22px] px-0"
+      className={`w-full flex flex-col items-center mx-auto text-lg sm:text-[22px] px-0 ${
+        isPenaltyHolding ? "no-user-select penalty-holding" : ""
+      }`}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.5 }}
+      onMouseDown={handleButtonInteraction}
+      onTouchStart={handleButtonInteraction}
     >
       {GameOverDialog}
-      <div className="w-full overflow-x-auto">
-        <table className="w-full min-w-[600px] border-separate border-spacing-y-3 border-spacing-x-2 mb-2">
+      <div className="">
+        <table className="min-w-[500px] border-separate border-spacing-y-2 sm:border-spacing-y-3 border-spacing-x-1 sm:border-spacing-x-2 mb-2">
           <tbody className="space-y-2">
             <motion.tr
               variants={tableRowVariants}
@@ -1103,7 +1148,7 @@ const QwixxScorecard = () => {
 
       {/* Main Action Buttons Row */}
       <motion.div
-        className="mt-6 flex flex-row justify-center items-center space-x-2"
+        className="mt-4 sm:mt-6 flex flex-row justify-center items-center space-x-1 sm:space-x-2"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.4, duration: 0.5 }}
@@ -1119,6 +1164,8 @@ const QwixxScorecard = () => {
                 id="reset-game-button"
                 variant="destructive"
                 className="transition duration-150 ease-in-out hover:scale-105 active:scale-95"
+                onMouseDown={handleButtonInteraction}
+                onTouchStart={handleButtonInteraction}
               >
                 <RotateCcw className="mr-2" />
                 Reset Game
@@ -1148,6 +1195,8 @@ const QwixxScorecard = () => {
                     handleReset();
                     setIsResetConfirmOpen(false);
                   }}
+                  onMouseDown={handleButtonInteraction}
+                  onTouchStart={handleButtonInteraction}
                 >
                   <RotateCcw className="mr-2" />
                   Confirm Reset
@@ -1165,6 +1214,8 @@ const QwixxScorecard = () => {
                 id="reset-game-button-mobile"
                 variant="destructive"
                 className="transition duration-150 ease-in-out hover:scale-105 active:scale-95"
+                onMouseDown={handleButtonInteraction}
+                onTouchStart={handleButtonInteraction}
               >
                 <RotateCcw className="mr-2" />
                 Reset Game
@@ -1188,6 +1239,8 @@ const QwixxScorecard = () => {
                       handleReset();
                       setIsResetConfirmOpen(false);
                     }}
+                    onMouseDown={handleButtonInteraction}
+                    onTouchStart={handleButtonInteraction}
                   >
                     <RotateCcw className="mr-2" />
                     Confirm Reset
@@ -1196,6 +1249,8 @@ const QwixxScorecard = () => {
                     <Button
                       variant="outline"
                       className="transition duration-150 ease-in-out hover:scale-105 active:scale-95"
+                      onMouseDown={handleButtonInteraction}
+                      onTouchStart={handleButtonInteraction}
                     >
                       Cancel
                     </Button>
@@ -1210,10 +1265,16 @@ const QwixxScorecard = () => {
         <Button
           id="add-penalty-button"
           className="relative transition duration-150 ease-in-out hover:scale-105 active:scale-95 overflow-hidden select-none"
-          onMouseDown={startPenaltyHold}
+          onMouseDown={(e) => {
+            handleButtonInteraction(e);
+            startPenaltyHold();
+          }}
           onMouseUp={stopPenaltyHold}
           onMouseLeave={stopPenaltyHold}
-          onTouchStart={startPenaltyHold}
+          onTouchStart={(e) => {
+            handleButtonInteraction(e);
+            startPenaltyHold();
+          }}
           onTouchEnd={stopPenaltyHold}
           disabled={penalties >= MAX_PENALTIES || isPenaltyHolding || gameOver}
           style={{ position: "relative" }}
@@ -1241,6 +1302,8 @@ const QwixxScorecard = () => {
           variant="default"
           className="transition duration-150 ease-in-out hover:scale-105 active:scale-95"
           onClick={() => setIsScoreVisible(!isScoreVisible)}
+          onMouseDown={handleButtonInteraction}
+          onTouchStart={handleButtonInteraction}
         >
           {isScoreVisible ? (
             <EyeOff className="mr-2" />
@@ -1276,7 +1339,7 @@ const QwixxScorecard = () => {
 
       {/* Penalty dots display (button moved to the row above) */}
       <motion.div
-        className="penalties-dots-container mt-6" // Renamed class for clarity, if needed
+        className="penalties-dots-container mt-4 sm:mt-6" // Renamed class for clarity, if needed
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5, duration: 0.5 }} // Original delay for penalty section
@@ -1312,7 +1375,7 @@ const QwixxScorecard = () => {
 
       {/* Score calculation section, shown/hidden by isScoreVisible */}
       <motion.div
-        className="mt-4"
+        className="mt-2 sm:mt-4"
         variants={scoreVariants}
         initial="hidden"
         animate={isScoreVisible ? "visible" : "hidden"}
@@ -1364,7 +1427,7 @@ const QwixxScorecard = () => {
 
       {/* Points Breakdown Section, shown/hidden by isScoreVisible */}
       <motion.div
-        className="mt-8 p-4 border border-border rounded-md bg-muted shadow-sm"
+        className="mt-4 sm:mt-8 p-2 sm:p-4 border border-border rounded-md bg-muted shadow-sm"
         variants={scoreVariants}
         initial="hidden"
         animate={isScoreVisible ? "visible" : "hidden"}
@@ -1413,7 +1476,7 @@ const QwixxScorecard = () => {
       </motion.div>
 
       <motion.footer
-        className="text-[0.8rem] text-muted-foreground mt-8 text-center"
+        className="text-[0.7rem] sm:text-[0.8rem] text-muted-foreground mt-4 sm:mt-8 text-center"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 1.5, duration: 0.8 }}

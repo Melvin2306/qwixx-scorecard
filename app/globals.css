@@ -118,3 +118,33 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* iOS text selection prevention during button holds */
+.no-user-select {
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+  -webkit-tap-highlight-color: transparent !important;
+}
+
+.no-user-select * {
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+  -webkit-tap-highlight-color: transparent !important;
+}
+
+/* Prevent focus ring during penalty hold */
+.penalty-holding button {
+  outline: none !important;
+  -webkit-tap-highlight-color: transparent !important;
+}
+
+.penalty-holding button:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
